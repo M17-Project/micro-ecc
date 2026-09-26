@@ -163,7 +163,7 @@ struct uECC_Curve_t {
 };
 
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
-static void bcopy(uint8_t *dst,
+static void uecc_bcopy(uint8_t *dst,
                   const uint8_t *src,
                   unsigned num_bytes) {
     while (0 != num_bytes) {
@@ -741,6 +741,9 @@ uECC_VLI_API void uECC_vli_modInv(uECC_word_t *result,
 /* ------ Point operations ------ */
 
 #include "curve-specific.inc"
+#if uECC_COMB_MULT!=0
+	#include "comb_g_mult.inc"
+#endif
 
 /* Returns 1 if 'point' is the point at infinity, 0 otherwise. */
 #define EccPoint_isZero(point, curve) uECC_vli_isZero((point), (curve)->num_words * 2)
@@ -994,6 +997,7 @@ uECC_VLI_API void uECC_vli_bytesToNative(uint8_t *native,
 
 #else
 
+#if uECC_VLI_NATIVE_LITTLE_ENDIAN == 0 || uECC_ENABLE_VLI_API
 uECC_VLI_API void uECC_vli_nativeToBytes(uint8_t *bytes,
                                          int num_bytes,
                                          const uECC_word_t *native) {
@@ -1015,6 +1019,7 @@ uECC_VLI_API void uECC_vli_bytesToNative(uECC_word_t *native,
             (uECC_word_t)bytes[i] << (8 * (b % uECC_WORD_SIZE));
     }
 }
+#endif
 
 #endif /* uECC_WORD_SIZE */
 
@@ -1053,7 +1058,7 @@ int uECC_shared_secret(const uint8_t *public_key,
                        uint8_t *secret,
                        uECC_Curve curve) {
     uECC_word_t _public[uECC_MAX_WORDS * 2];
-    uECC_word_t _private[uECC_MAX_WORDS];
+    uECC_word_t _private[uECC_MAX_WORDS] = {0};
 
     uECC_word_t tmp[uECC_MAX_WORDS];
     uECC_word_t *p2[2] = {_private, tmp};
@@ -1063,8 +1068,8 @@ int uECC_shared_secret(const uint8_t *public_key,
     wordcount_t num_bytes = curve->num_bytes;
 
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
-    bcopy((uint8_t *) _private, private_key, num_bytes);
-    bcopy((uint8_t *) _public, public_key, num_bytes*2);
+    uecc_bcopy((uint8_t *) _private, private_key, num_bytes);
+    uecc_bcopy((uint8_t *) _public, public_key, num_bytes*2);
 #else
     uECC_vli_bytesToNative(_private, private_key, BITS_TO_BYTES(curve->num_n_bits));
     uECC_vli_bytesToNative(_public, public_key, num_bytes);
@@ -1086,7 +1091,7 @@ int uECC_shared_secret(const uint8_t *public_key,
 
     EccPoint_mult(_public, _public, p2[!carry], initial_Z, curve->num_n_bits + 1, curve);
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
-    bcopy((uint8_t *) secret, (uint8_t *) _public, num_bytes);
+    uecc_bcopy((uint8_t *) secret, (uint8_t *) _public, num_bytes);
 #else
     uECC_vli_nativeToBytes(secret, num_bytes, _public);
 #endif
@@ -1114,7 +1119,7 @@ void uECC_decompress(const uint8_t *compressed, uint8_t *public_key, uECC_Curve 
 #endif
     uECC_word_t *y = point + curve->num_words;
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
-    bcopy(public_key, compressed+1, curve->num_bytes);
+    uecc_bcopy(public_key, compressed+1, curve->num_bytes);
 #else
     uECC_vli_bytesToNative(point, compressed + 1, curve->num_bytes);
 #endif
@@ -1224,7 +1229,7 @@ static void bits2int(uECC_word_t *native,
 
     uECC_vli_clear(native, num_n_words);
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
-    bcopy((uint8_t *) native, bits, bits_size);
+    uecc_bcopy((uint8_t *) native, bits, bits_size);
 #else
     uECC_vli_bytesToNative(native, bits, bits_size);
 #endif
@@ -1255,23 +1260,28 @@ static int uECC_sign_with_k_internal(const uint8_t *private_key,
 
     uECC_word_t tmp[uECC_MAX_WORDS];
     uECC_word_t s[uECC_MAX_WORDS];
+#if uECC_COMB_MULT==0
     uECC_word_t *k2[2] = {tmp, s};
     uECC_word_t *initial_Z = 0;
+#endif
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
     uECC_word_t *p = (uECC_word_t *)signature;
 #else
     uECC_word_t p[uECC_MAX_WORDS * 2];
 #endif
+#if uECC_COMB_MULT==0
     uECC_word_t carry;
+#endif
     wordcount_t num_words = curve->num_words;
     wordcount_t num_n_words = BITS_TO_WORDS(curve->num_n_bits);
+#if uECC_COMB_MULT==0
     bitcount_t num_n_bits = curve->num_n_bits;
-
+#endif
     /* Make sure 0 < k < curve_n */
     if (uECC_vli_isZero(k, num_words) || uECC_vli_cmp(curve->n, k, num_n_words) != 1) {
         return 0;
     }
-
+#if uECC_COMB_MULT==0
     carry = regularize_k(k, tmp, s, curve);
     /* If an RNG function was specified, try to get a random initial Z value to improve
        protection against side-channel attacks. */
@@ -1282,6 +1292,23 @@ static int uECC_sign_with_k_internal(const uint8_t *private_key,
         initial_Z = k2[carry];
     }
     EccPoint_mult(p, curve->G, k2[!carry], initial_Z, num_n_bits + 1, curve);
+#else
+    {
+    	uECC_word_t k_blinded[COMB_SCALAR_WORDS];
+    		if (g_rng_function) {
+    			if (!compute_blinded_nonce_scalar(k_blinded, k, curve)) {
+    				return 0;
+    			}
+    		} else {
+    			/* No RNG configured: fall back to the raw scalar, matching the
+    			   original code's behavior of using initial_Z = 0 in this case
+    			   (e.g. uECC_sign_deterministic doesn't require an RNG). */
+    			uECC_vli_clear(k_blinded, COMB_SCALAR_WORDS);
+    			uECC_vli_set(k_blinded, k, num_words);
+    		}
+    		EccPoint_mult_G_comb(p, k_blinded, curve);
+    }
+#endif
     if (uECC_vli_isZero(p, num_words)) {
         return 0;
     }
@@ -1306,7 +1333,7 @@ static int uECC_sign_with_k_internal(const uint8_t *private_key,
 #endif
 
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
-    bcopy((uint8_t *) tmp, private_key, BITS_TO_BYTES(curve->num_n_bits));
+    uecc_bcopy((uint8_t *) tmp, private_key, BITS_TO_BYTES(curve->num_n_bits));
 #else
     uECC_vli_bytesToNative(tmp, private_key, BITS_TO_BYTES(curve->num_n_bits)); /* tmp = d */
 #endif
@@ -1322,7 +1349,7 @@ static int uECC_sign_with_k_internal(const uint8_t *private_key,
         return 0;
     }
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
-    bcopy((uint8_t *) signature + curve->num_bytes, (uint8_t *) s, curve->num_bytes);
+    uecc_bcopy((uint8_t *) signature + curve->num_bytes, (uint8_t *) s, curve->num_bytes);
 #else
     uECC_vli_nativeToBytes(signature + curve->num_bytes, curve->num_bytes, s);
 #endif
@@ -1520,8 +1547,8 @@ int uECC_verify(const uint8_t *public_key,
     s[num_n_words - 1] = 0;
 
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
-    bcopy((uint8_t *) r, signature, curve->num_bytes);
-    bcopy((uint8_t *) s, signature + curve->num_bytes, curve->num_bytes);
+    uecc_bcopy((uint8_t *) r, signature, curve->num_bytes);
+    uecc_bcopy((uint8_t *) s, signature + curve->num_bytes, curve->num_bytes);
 #else
     uECC_vli_bytesToNative(_public, public_key, curve->num_bytes);
     uECC_vli_bytesToNative(
