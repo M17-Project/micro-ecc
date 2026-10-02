@@ -950,7 +950,7 @@ uECC_VLI_API int uECC_generate_random_int(uECC_word_t *random,
 }
 
 static uECC_word_t EccPoint_compute_public_key(uECC_word_t *result,
-                                               uECC_word_t *private_key,
+                                               const uECC_word_t *private_key,
                                                uECC_Curve curve) {
     uECC_word_t tmp1[uECC_MAX_WORDS];
     uECC_word_t tmp2[uECC_MAX_WORDS];
@@ -1162,7 +1162,7 @@ uECC_VLI_API int uECC_valid_point(const uECC_word_t *point, uECC_Curve curve) {
 
 int uECC_valid_public_key(const uint8_t *public_key, uECC_Curve curve) {
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
-    uECC_word_t *_public = (uECC_word_t *)public_key;
+    const uECC_word_t *_public = (const uECC_word_t *)public_key;
 #else
     uECC_word_t _public[uECC_MAX_WORDS * 2];
 #endif
@@ -1177,7 +1177,7 @@ int uECC_valid_public_key(const uint8_t *public_key, uECC_Curve curve) {
 
 int uECC_compute_public_key(const uint8_t *private_key, uint8_t *public_key, uECC_Curve curve) {
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
-    uECC_word_t *_private = (uECC_word_t *)private_key;
+    const uECC_word_t *_private = (const uECC_word_t *)private_key;
     uECC_word_t *_public = (uECC_word_t *)public_key;
 #else
     uECC_word_t _private[uECC_MAX_WORDS];
@@ -1534,7 +1534,7 @@ int uECC_verify(const uint8_t *public_key,
     bitcount_t num_bits;
     bitcount_t i;
 #if uECC_VLI_NATIVE_LITTLE_ENDIAN
-    uECC_word_t *_public = (uECC_word_t *)public_key;
+    const uECC_word_t *_public = (const uECC_word_t *)public_key;
 #else
     uECC_word_t _public[uECC_MAX_WORDS * 2];
 #endif
