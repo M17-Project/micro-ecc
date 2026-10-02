@@ -22,6 +22,10 @@
      provides no differential-power-analysis protection by itself.
    ============================================================================ */
 
+#if uECC_COMB_MULT && uECC_WORD_SIZE != 4
+   #error "comb_g_mult.inc requires 32-bit words; build with -DuECC_COMB_MULT=0"
+#endif
+
 #define COMB_W 4
 #define COMB_T_COLS 67
 #define COMB_SCALAR_WORDS 9      /* holds up to 288 bits, 268 are meaningful */
