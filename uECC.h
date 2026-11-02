@@ -75,12 +75,8 @@ the same endianness. */
     #define uECC_SUPPORT_COMPRESSED_POINT 1
 #endif
 
-/* Specify if comb multiplication is to be used.
-   Supported only with the secp256r1 curve.
-   For other curves, generate the comb data using the provided Python script */
-#ifndef uECC_COMB_MULT
-    #define uECC_COMB_MULT 1
-#endif
+/* uECC_COMB_MULT: comb multiplication for secp256r1 (32-bit words only).
+   Defaults to 1 when uECC_WORD_SIZE == 4, else 0; define it to override. */
 
 struct uECC_Curve_t;
 typedef const struct uECC_Curve_t * uECC_Curve;

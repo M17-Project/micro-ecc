@@ -3,6 +3,14 @@
 #include "uECC.h"
 #include "uECC_vli.h"
 
+#ifndef uECC_COMB_MULT
+    #if uECC_WORD_SIZE == 4
+        #define uECC_COMB_MULT 1
+    #else
+        #define uECC_COMB_MULT 0
+    #endif
+#endif
+
 #ifndef uECC_RNG_MAX_TRIES
     #define uECC_RNG_MAX_TRIES 64
 #endif
