@@ -111,12 +111,18 @@ int run(Test* tests, int num_tests, uECC_Curve curve) {
     return all_success;
 }
 
+/* Exit codes: 0 = all passed, 1 = a test failed, 77 = no curve was tested
+   (CTest treats 77 as skipped, see CMakeLists.txt). */
+static int tested = 0, failed = 0;
+
 #define RUN_TESTS(curve) \
     printf(#curve ":\n"); \
+    tested++; \
     if (run(curve##_tests, sizeof(curve##_tests) / sizeof(curve##_tests[0]), uECC_##curve()) ) { \
         printf("  All passed\n"); \
     } else { \
         printf("  Failed\n"); \
+        failed++; \
     }
 
 int main() {
@@ -124,5 +130,9 @@ int main() {
     RUN_TESTS(secp256k1)
 #endif
 
-    return 0;
+    if (!tested) {
+        printf("No curve with test vectors is enabled - nothing tested\n");
+        return 77;
+    }
+    return failed ? 1 : 0;
 }

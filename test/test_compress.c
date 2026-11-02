@@ -25,6 +25,7 @@ int main() {
 
     int i;
     int c;
+    int failures = 0;
     
     const struct uECC_Curve_t * curves[5];
     int num_curves = 0;
@@ -58,6 +59,7 @@ int main() {
             /* Generate arbitrary EC point (public) on Curve */
             if (!uECC_make_key(public, private, curves[c])) {
                 printf("uECC_make_key() failed\n");
+                failures++;
                 continue;
             }
 
@@ -67,6 +69,7 @@ int main() {
 
             if (memcmp(public, decompressed_point, sizeof(public)) != 0) {
                 printf("Original and decompressed points are not identical!\n");
+                failures++;
                 vli_print("Original point =     ", public, sizeof(public));
                 vli_print("Compressed point =   ", compressed_point, sizeof(compressed_point));
                 vli_print("Decompressed point = ", decompressed_point, sizeof(decompressed_point));
@@ -75,5 +78,9 @@ int main() {
         printf("\n");
     }
 
+    if (failures) {
+        printf("%d failure(s)\n", failures);
+        return 1;
+    }
     return 0;
 }

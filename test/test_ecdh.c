@@ -13,6 +13,7 @@ void vli_print(uint8_t *vli, unsigned int size) {
 
 int main() {
     int i, c;
+    int failures = 0;
     uint8_t private1[32] = {0};
     uint8_t private2[32] = {0};
     uint8_t public1[64] = {0};
@@ -63,6 +64,7 @@ int main() {
         
             if (memcmp(secret1, secret2, sizeof(secret1)) != 0) {
                 printf("Shared secrets are not identical!\n");
+                failures++;
                 printf("Private key 1 = ");
                 vli_print(private1, 32);
                 printf("\n");
@@ -86,5 +88,9 @@ int main() {
         printf("\n");
     }
     
+    if (failures) {
+        printf("%d failure(s)\n", failures);
+        return 1;
+    }
     return 0;
 }

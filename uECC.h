@@ -47,9 +47,11 @@ arrays passed into the public API as word arrays, therefore requiring the provid
 to be word aligned on architectures that do not support unaligned accesses.
 IMPORTANT: Keys and signatures generated with uECC_VLI_NATIVE_LITTLE_ENDIAN=1 are incompatible
 with keys and signatures generated with uECC_VLI_NATIVE_LITTLE_ENDIAN=0; all parties must use
-the same endianness. */
+the same endianness.
+Keys, digests and signatures must use the standard big-endian order
+expected by OpenSSL and other implementations (checked by test/test_kat_secp256r1.c). */
 #ifndef uECC_VLI_NATIVE_LITTLE_ENDIAN
-    #define uECC_VLI_NATIVE_LITTLE_ENDIAN 1
+    #define uECC_VLI_NATIVE_LITTLE_ENDIAN 0
 #endif
 
 /* Curve support selection. Set to 0 to remove that curve. */

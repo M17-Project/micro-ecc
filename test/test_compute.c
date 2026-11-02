@@ -16,6 +16,7 @@ void vli_print(char *str, uint8_t *vli, unsigned int size) {
 int main() {
     int i;
     int success;
+    int failures = 0;
     uint8_t private[32];
     uint8_t public[64];
     uint8_t public_computed[64];
@@ -51,15 +52,18 @@ int main() {
             
             if (!uECC_make_key(public, private, curves[c])) {
                 printf("uECC_make_key() failed\n");
+                failures++;
                 continue;
             }
 
             if (!uECC_compute_public_key(private, public_computed, curves[c])) {
                 printf("uECC_compute_public_key() failed\n");
+                failures++;
             }
 
             if (memcmp(public, public_computed, sizeof(public)) != 0) {
                 printf("Computed and provided public keys are not identical!\n");
+                failures++;
                 vli_print("Computed public key = ", public_computed, sizeof(public_computed));
                 vli_print("Provided public key = ", public, sizeof(public));
                 vli_print("Private key = ", private, sizeof(private));
@@ -73,9 +77,14 @@ int main() {
         success = uECC_compute_public_key(private, public_computed, curves[c]);
         if (success) {
             printf("uECC_compute_public_key() should have failed\n");
+            failures++;
         }
         printf("\n");
     }
     
+    if (failures) {
+        printf("%d failure(s)\n", failures);
+        return 1;
+    }
     return 0;
 }
