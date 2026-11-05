@@ -170,7 +170,6 @@ struct uECC_Curve_t {
 #endif
 };
 
-#if uECC_VLI_NATIVE_LITTLE_ENDIAN
 static void uecc_bcopy(uint8_t *dst,
                   const uint8_t *src,
                   unsigned num_bytes) {
@@ -179,7 +178,6 @@ static void uecc_bcopy(uint8_t *dst,
         dst[num_bytes] = src[num_bytes];
     }
 }
-#endif
 
 static cmpresult_t uECC_vli_cmp_unsafe(const uECC_word_t *left,
                                        const uECC_word_t *right,
@@ -1394,6 +1392,134 @@ int uECC_sign(const uint8_t *private_key,
         }
     }
     return 0;
+}
+
+/* Two-step signing: the k*G multiplication ahead of time, the rest once the
+   hash is known. The buffer holds a marker word, k^-1 and r, as native words. */
+#define PRESIG_READY 0x50524553u /* "PRES" */
+
+int uECC_sign_precompute(uint8_t *presig, uECC_Curve curve) {
+    uECC_word_t k[uECC_MAX_WORDS];
+    uECC_word_t tmp[uECC_MAX_WORDS];
+    uECC_word_t p[uECC_MAX_WORDS * 2];
+#if uECC_COMB_MULT==0
+    uECC_word_t s[uECC_MAX_WORDS];
+    uECC_word_t *k2[2] = {tmp, s};
+    uECC_word_t *initial_Z = 0;
+    uECC_word_t carry;
+    bitcount_t num_n_bits = curve->num_n_bits;
+#endif
+    wordcount_t num_words = curve->num_words;
+    wordcount_t num_n_words = BITS_TO_WORDS(curve->num_n_bits);
+    uint32_t marker = PRESIG_READY;
+    uECC_word_t tries;
+
+    if (!g_rng_function ||
+        4 + 2 * (unsigned)num_n_words * uECC_WORD_SIZE > uECC_PRESIGNATURE_BYTES) {
+        return 0;
+    }
+
+    for (tries = 0; tries < uECC_RNG_MAX_TRIES; ++tries) {
+        if (!uECC_generate_random_int(k, curve->n, num_n_words)) {
+            return 0;
+        }
+        if (uECC_vli_isZero(k, num_words) || uECC_vli_cmp(curve->n, k, num_n_words) != 1) {
+            continue;
+        }
+#if uECC_COMB_MULT==0
+        carry = regularize_k(k, tmp, s, curve);
+        if (!uECC_generate_random_int(k2[carry], curve->p, num_words)) {
+            return 0;
+        }
+        initial_Z = k2[carry];
+        EccPoint_mult(p, curve->G, k2[!carry], initial_Z, num_n_bits + 1, curve);
+#else
+        {
+            uECC_word_t k_blinded[COMB_SCALAR_WORDS];
+            if (!compute_blinded_nonce_scalar(k_blinded, k, curve)) {
+                return 0;
+            }
+            EccPoint_mult_G_comb(p, k_blinded, curve);
+        }
+#endif
+        if (uECC_vli_isZero(p, num_words)) {
+            continue;
+        }
+
+        /* k^-1, with the inversion blinded as in uECC_sign() */
+        if (!uECC_generate_random_int(tmp, curve->n, num_n_words)) {
+            return 0;
+        }
+        uECC_vli_modMult(k, k, tmp, curve->n, num_n_words); /* k' = rand * k */
+        uECC_vli_modInv(k, k, curve->n, num_n_words);       /* k = 1 / k' */
+        uECC_vli_modMult(k, k, tmp, curve->n, num_n_words); /* k = 1 / k */
+
+        /* r is the x coordinate of R, taken as uECC_sign() takes it */
+        uECC_vli_clear(tmp, num_n_words);
+        uECC_vli_set(tmp, p, num_words);
+
+        uecc_bcopy(presig, (const uint8_t *)&marker, 4);
+        uecc_bcopy(presig + 4, (const uint8_t *)k, num_n_words * uECC_WORD_SIZE);
+        uecc_bcopy(presig + 4 + num_n_words * uECC_WORD_SIZE, (const uint8_t *)tmp,
+                   num_n_words * uECC_WORD_SIZE);
+        uECC_vli_clear(k, num_n_words);
+        return 1;
+    }
+    return 0;
+}
+
+int uECC_sign_finish(const uint8_t *private_key,
+                     const uint8_t *message_hash,
+                     unsigned hash_size,
+                     uint8_t *presig,
+                     uint8_t *signature,
+                     uECC_Curve curve) {
+    uECC_word_t kinv[uECC_MAX_WORDS];
+    uECC_word_t r[uECC_MAX_WORDS];
+    uECC_word_t d[uECC_MAX_WORDS];
+    uECC_word_t s[uECC_MAX_WORDS];
+    wordcount_t num_n_words = BITS_TO_WORDS(curve->num_n_bits);
+    uint32_t marker;
+    unsigned i;
+    int ok = 0;
+
+    uecc_bcopy((uint8_t *)&marker, presig, 4);
+    if (marker != PRESIG_READY) {
+        return 0;
+    }
+    uecc_bcopy((uint8_t *)kinv, presig + 4, num_n_words * uECC_WORD_SIZE);
+    uecc_bcopy((uint8_t *)r, presig + 4 + num_n_words * uECC_WORD_SIZE,
+               num_n_words * uECC_WORD_SIZE);
+    for (i = 0; i < uECC_PRESIGNATURE_BYTES; ++i) {
+        presig[i] = 0; /* one signature per precomputation */
+    }
+
+#if uECC_VLI_NATIVE_LITTLE_ENDIAN
+    uECC_vli_clear(d, num_n_words);
+    uecc_bcopy((uint8_t *) d, private_key, BITS_TO_BYTES(curve->num_n_bits));
+#else
+    uECC_vli_bytesToNative(d, private_key, BITS_TO_BYTES(curve->num_n_bits));
+#endif
+
+    uECC_vli_modMult(s, d, r, curve->n, num_n_words);    /* s = r*d */
+    bits2int(d, message_hash, hash_size, curve);
+    uECC_vli_modAdd(s, d, s, curve->n, num_n_words);     /* s = e + r*d */
+    uECC_vli_modMult(s, s, kinv, curve->n, num_n_words); /* s = (e + r*d) / k */
+
+    if (uECC_vli_numBits(s, num_n_words) <= (bitcount_t)curve->num_bytes * 8) {
+#if uECC_VLI_NATIVE_LITTLE_ENDIAN
+        uecc_bcopy(signature, (uint8_t *) r, curve->num_bytes);
+        uecc_bcopy(signature + curve->num_bytes, (uint8_t *) s, curve->num_bytes);
+#else
+        uECC_vli_nativeToBytes(signature, curve->num_bytes, r);
+        uECC_vli_nativeToBytes(signature + curve->num_bytes, curve->num_bytes, s);
+#endif
+        ok = 1;
+    }
+
+    uECC_vli_clear(kinv, num_n_words);
+    uECC_vli_clear(d, num_n_words);
+    return ok;
 }
 
 /* Compute an HMAC using K as a key (as in RFC 6979). Note that K is always

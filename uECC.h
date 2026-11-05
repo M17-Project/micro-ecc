@@ -268,6 +268,42 @@ int uECC_sign(const uint8_t *private_key,
               uint8_t *signature,
               uECC_Curve curve);
 
+/* uECC_sign_precompute() / uECC_sign_finish() functions.
+ECDSA in two steps. The costly part of a signature, the point multiplication
+R = k*G with a fresh random k, does not depend on the message, so it can be
+done ahead of time; uECC_sign_finish() then needs only a few modular
+operations once the hash is known. Together they produce the same kind of
+signature as uECC_sign() (an RNG function must be set).
+
+Usage: never use a precomputed value for more than one signature - signing two
+messages with the same k reveals the private key. uECC_sign_finish() wipes the
+buffer, and refuses a buffer that has already been used.
+
+Inputs (precompute):
+    presig - Receives the precomputed values (k^-1 and r). Must be at least
+             uECC_PRESIGNATURE_BYTES bytes. Keep it secret: with it and a
+             signature, the private key can be computed.
+
+Inputs (finish):
+    private_key  - Your private key.
+    message_hash - The hash of the message to sign.
+    hash_size    - The size of message_hash in bytes.
+    presig       - A buffer filled by uECC_sign_precompute(); wiped on return.
+
+Outputs:
+    signature - Will be filled in with the signature value. Must be at least 2 * curve size long.
+
+Return 1 on success, 0 if an error occurred.
+*/
+#define uECC_PRESIGNATURE_BYTES 72
+int uECC_sign_precompute(uint8_t *presig, uECC_Curve curve);
+int uECC_sign_finish(const uint8_t *private_key,
+                     const uint8_t *message_hash,
+                     unsigned hash_size,
+                     uint8_t *presig,
+                     uint8_t *signature,
+                     uECC_Curve curve);
+
 /* uECC_HashContext structure.
 This is used to pass in an arbitrary hash function to uECC_sign_deterministic().
 The structure will be used for multiple hash computations; each time a new hash

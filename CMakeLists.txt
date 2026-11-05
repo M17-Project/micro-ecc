@@ -42,6 +42,7 @@ if(UECC_BUILD_TESTS)
         ecdh                    test_ecdh.c
         compute                 test_compute.c
         compress                test_compress.c
+        presign                 test_presign.c
     )
 
     list(LENGTH _uecc_tests _n)

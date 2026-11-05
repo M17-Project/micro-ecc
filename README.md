@@ -16,6 +16,17 @@ Features
  * Support for 5 standard curves: secp160r1, secp192r1, secp224r1, secp256r1, and secp256k1.
  * BSD 2-clause license.
 
+M17-Project additions
+---------------------
+
+ * secp256r1 point multiplication by a fixed-base comb on 32-bit platforms
+   (`uECC_COMB_MULT`, on by default there), for faster key generation and signing.
+ * Two-step signing: `uECC_sign_precompute()` does the costly part (the random
+   nonce k and R = k*G) ahead of time, `uECC_sign_finish()` then signs a hash
+   with a few modular operations. For signing under a deadline, e.g. at the end
+   of a radio transmission. One precomputation serves exactly one signature,
+   see uECC.h.
+
 Usage Notes
 -----------
 ### Point Representation ###
